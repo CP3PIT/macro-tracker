@@ -1,0 +1,11 @@
+{
+    "meal1": [
+        {
+            "name": "Apple",
+            "protein": 0.0,
+            "carbs": 25.0,
+            "fat": 0.0,
+            "calories": 100.0
+        }
+    ]
+}
