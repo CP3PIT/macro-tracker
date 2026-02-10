@@ -1043,6 +1043,11 @@ function startFoodSync() {
     Object.values(remote).forEach(rf => {
       if (!rf || !rf.id || !rf.name) return;
       const local = state.foods.find(f => f.id === rf.id);
+      const nameMatch = !local && state.foods.find(f => f.name.trim().toLowerCase() === rf.name.trim().toLowerCase());
+      if (nameMatch) {
+        // Same name exists locally with different ID — skip to avoid duplicate
+        return;
+      }
       if (!local) {
         state.foods.push(rf);
         changed = true;
@@ -1073,6 +1078,7 @@ function startFoodSync() {
           Object.values(msg.data).forEach(rf => {
             if (!rf || !rf.id || !rf.name) return;
             const local = state.foods.find(f => f.id === rf.id);
+            if (!local && state.foods.find(f => f.name.trim().toLowerCase() === rf.name.trim().toLowerCase())) return;
             if (!local) { state.foods.push(rf); changed = true; }
             else if ((rf.lastUsed || 0) > (local.lastUsed || 0)) { Object.assign(local, rf); changed = true; }
           });
@@ -1085,6 +1091,7 @@ function startFoodSync() {
           const rf = msg.data;
           if (!rf || !rf.id) return;
           const local = state.foods.find(f => f.id === rf.id);
+          if (!local && rf.name && state.foods.find(f => f.name.trim().toLowerCase() === rf.name.trim().toLowerCase())) return;
           if (!local) {
             state.foods.push(rf);
           } else {
@@ -1102,6 +1109,7 @@ function startFoodSync() {
         Object.values(msg.data).forEach(rf => {
           if (!rf || !rf.id || !rf.name) return;
           const local = state.foods.find(f => f.id === rf.id);
+          if (!local && state.foods.find(f => f.name.trim().toLowerCase() === rf.name.trim().toLowerCase())) return;
           if (!local) state.foods.push(rf);
           else Object.assign(local, rf);
         });
@@ -1173,6 +1181,26 @@ function toast(msg) {
 // ===== STORAGE =====
 function saveProfiles() { localStorage.setItem(STORAGE_KEYS.profiles, JSON.stringify(state.profiles)); }
 function saveFoods() { localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods)); syncFoodsToFirebase(); }
+
+// Deduplicate foods by name — keeps the one with highest useCount/most recent lastUsed
+function deduplicateFoods() {
+  const groups = {};
+  state.foods.forEach(f => {
+    const key = f.name.trim().toLowerCase();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(f);
+  });
+  const toRemove = [];
+  Object.values(groups).forEach(dupes => {
+    if (dupes.length < 2) return;
+    dupes.sort((a, b) => (b.useCount || 0) - (a.useCount || 0) || (b.lastUsed || 0) - (a.lastUsed || 0));
+    for (let i = 1; i < dupes.length; i++) toRemove.push(dupes[i].id);
+  });
+  if (toRemove.length === 0) return;
+  state.foods = state.foods.filter(f => !toRemove.includes(f.id));
+  saveFoods();
+  toRemove.forEach(id => deleteFoodFromFirebase(id));
+}
 function saveLogs() { localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(state.logs)); syncLogToFirebase(state.currentDate, state.activeProfile); }
 function saveSettings() { localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(state.settings)); }
 
@@ -3192,6 +3220,7 @@ document.getElementById('manual-barcode-input').addEventListener('keydown', (e) 
 
 // ===== INIT =====
 loadAll();
+deduplicateFoods();
 applyTheme();
 renderToday();
 startFoodSync();
