@@ -1847,50 +1847,59 @@ async function lookupBarcode(code) {
   document.getElementById('scan-result').innerHTML = '<div style="text-align:center"><div class="loading-spinner"></div><p>Looking up barcode...</p></div>';
 
   let food = null;
-  let dataSource = 'OpenFoodFacts';
+  let dataSource = '';
   let warning = '';
 
-  // Try OpenFoodFacts first
-  try {
-    const resp = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json`);
-    const data = await resp.json();
-    if (data.status === 1 && data.product) {
-      const parsed = parseOFFNutrients(data.product);
-      const productName = parsed.name || data.product.product_name || '';
-
-      // If data looks suspect and USDA key is available, try USDA fallback
-      if (parsed.suspect && state.settings.usdaKey) {
-        document.getElementById('scan-result').innerHTML = '<div style="text-align:center"><div class="loading-spinner"></div><p>Verifying with USDA...</p></div>';
-        const usdaResult = await usdaFallbackSearch(productName);
-        if (usdaResult && usdaResult.calories > 0) {
-          food = { id: uid(), ...usdaResult, name: productName || usdaResult.name, barcode: code, source: 'scanned', category: '', lastUsed: 0, useCount: 0 };
-          dataSource = 'USDA (verified)';
+  // Try USDA first (most accurate for US products) — search by UPC barcode
+  if (state.settings.usdaKey) {
+    try {
+      const resp = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(code)}&dataType=Branded&pageSize=5&api_key=${state.settings.usdaKey}`);
+      const data = await resp.json();
+      if (data.foods && data.foods.length > 0) {
+        // Find exact UPC match first, otherwise take first result
+        const exact = data.foods.find(f => f.gtinUpc === code) || data.foods[0];
+        const getNutrient = (id) => { const n = exact.foodNutrients?.find(x => x.nutrientId === id); return n ? n.value : 0; };
+        const servingG = exact.servingSize || 100;
+        const scale = servingG / 100;
+        const cal = Math.round(getNutrient(USDA_NUTRIENT_IDS.calories) * scale);
+        if (cal > 0) {
+          food = {
+            id: uid(),
+            name: exact.description || 'Unknown Product',
+            serving: exact.servingSize ? `${exact.servingSize}${exact.servingSizeUnit || 'g'}` : '100g',
+            servingGrams: servingG,
+            protein: round1(getNutrient(USDA_NUTRIENT_IDS.protein) * scale),
+            carbs: round1(getNutrient(USDA_NUTRIENT_IDS.carbs) * scale),
+            fat: round1(getNutrient(USDA_NUTRIENT_IDS.fat) * scale),
+            calories: cal,
+            source: 'scanned', barcode: code, category: '', lastUsed: 0, useCount: 0,
+          };
+          dataSource = 'USDA';
         }
       }
+    } catch(e) {}
+  }
 
-      // Use OFF data if USDA didn't produce a better result
-      if (!food) {
+  // Fall back to OpenFoodFacts if USDA had no result
+  if (!food) {
+    try {
+      const resp = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json`);
+      const data = await resp.json();
+      if (data.status === 1 && data.product) {
+        const parsed = parseOFFNutrients(data.product);
+        const productName = parsed.name || data.product.product_name || '';
         food = {
           id: uid(), name: productName || 'Unknown Product',
           serving: parsed.serving, servingGrams: parsed.servingGrams,
           protein: parsed.protein, carbs: parsed.carbs, fat: parsed.fat, calories: parsed.calories,
           source: 'scanned', barcode: code, category: '', lastUsed: 0, useCount: 0,
         };
+        dataSource = 'OpenFoodFacts';
         if (parsed.suspect) {
           warning = 'Nutrition data may be approximate — verify before saving';
         }
       }
-    }
-  } catch(e) {}
-
-  // If OFF had no result, try USDA search as last resort
-  if (!food && state.settings.usdaKey) {
-    document.getElementById('scan-result').innerHTML = '<div style="text-align:center"><div class="loading-spinner"></div><p>Searching USDA...</p></div>';
-    const usdaResult = await usdaFallbackSearch(code);
-    if (usdaResult && usdaResult.calories > 0) {
-      food = { id: uid(), ...usdaResult, barcode: code, source: 'scanned', category: '', lastUsed: 0, useCount: 0 };
-      dataSource = 'USDA';
-    }
+    } catch(e) {}
   }
 
   if (food) {
