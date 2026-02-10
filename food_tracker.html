@@ -925,6 +925,22 @@ function syncLogToFirebase(date, profile) {
   }).catch(() => {});
 }
 
+// Push all local log data for a given date to Firebase (both profiles)
+function syncLocalLogsForDate(date) {
+  const path = fbLogsPath();
+  if (!path) return;
+  ['male', 'female'].forEach(p => {
+    const log = state.logs[date] && state.logs[date][p];
+    if (log) {
+      fetch(path + '/' + date + '/' + p + '.json', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(log),
+      }).catch(() => {});
+    }
+  });
+}
+
 // Fetch partner logs for a specific date (one-time REST call)
 function fetchPartnerLogsForDate(date) {
   const path = fbLogsPath();
@@ -1258,6 +1274,7 @@ function navigateTo(screen) {
   if (screen === 'settings') renderSettings();
   if (screen === 'scan') initScanScreen();
   if (screen === 'dashboard') {
+    syncLocalLogsForDate(state.dashboardDate);
     fetchPartnerLogsForDate(state.dashboardDate).then(() => renderDashboard());
     renderDashboard();
   }
@@ -2814,11 +2831,13 @@ document.addEventListener('click', (e) => {
     // Dashboard date nav
     case 'dash-prev-day':
       state.dashboardDate = shiftDate(state.dashboardDate, -1);
+      syncLocalLogsForDate(state.dashboardDate);
       fetchPartnerLogsForDate(state.dashboardDate).then(() => renderDashboard());
       renderDashboard();
       break;
     case 'dash-next-day':
       state.dashboardDate = shiftDate(state.dashboardDate, 1);
+      syncLocalLogsForDate(state.dashboardDate);
       fetchPartnerLogsForDate(state.dashboardDate).then(() => renderDashboard());
       renderDashboard();
       break;
@@ -3177,6 +3196,7 @@ applyTheme();
 renderToday();
 startFoodSync();
 startLogSync();
+syncLocalLogsForDate(todayStr());
 
 // ===== PWA Service Worker =====
 if ('serviceWorker' in navigator) {
