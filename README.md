@@ -49,6 +49,11 @@ Built as a free Lifesum replacement for tracking macros across two people (Chris
 - CSV export per day
 - JSON export/import for full data backup
 
+### Cross-Device Food Sync
+- Food database **syncs in real-time** between Chris's and Erica's phones via Firebase
+- Scan a barcode on one phone → it appears on the other automatically
+- Works for scanned foods, manually created foods, and USDA imports
+
 ### Settings
 - Dark/Light theme toggle
 - Edit profiles and day types with custom macro targets
@@ -58,17 +63,24 @@ Built as a free Lifesum replacement for tracking macros across two people (Chris
 
 - **Single HTML file** (~2500 lines) — all HTML, CSS, and JS inline
 - **Zero dependencies** at runtime (only CDN: `html5-qrcode` for barcode scanning)
+- **Firebase Realtime Database** for cross-device food sync
 - **localStorage** for all data persistence
 - **Vanilla JS** with event delegation via `data-action` attributes
 - **CSS custom properties** for dark/light theming
 - **Mobile-first** responsive design
+- **PWA** — installable on home screen, works offline
 
 ## How to Use
+
+### On Phone (Recommended)
+1. Open: `https://cp3pit.github.io/macro-tracker/`
+2. **Install as app:** iPhone: Share > "Add to Home Screen" · Android: Menu > "Add to Home Screen"
+3. Food database syncs between devices in real-time via Firebase
 
 ### On Desktop
 Just open `food_tracker.html` in Chrome or Edge.
 
-### On Phone (same Wi-Fi network)
+### On Phone (local network — legacy)
 1. From your computer, run:
    ```
    npx http-server ./ -p 8080 -S -C cert.pem -K key.pem --cors -c-1
@@ -88,11 +100,16 @@ All data lives in localStorage under these keys:
 | `mpt_logs` | Daily logs keyed by date, each containing meals for both profiles |
 | `mpt_settings` | Theme preference, USDA API key |
 
+Food database also syncs to Firebase Realtime Database at `macro-tracker-17b41-default-rtdb.firebaseio.com`.
+
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `food_tracker.html` | The entire app |
+| `index.html` | Redirect to food_tracker.html |
+| `manifest.json` | PWA manifest for home screen install |
+| `sw.js` | Service worker for offline support |
 | `cert.pem` | Self-signed SSL certificate for local HTTPS server |
 | `key.pem` | Private key for the SSL certificate |
 | `data/foods.csv` | Original food data (reference only, seed data is in the HTML) |
