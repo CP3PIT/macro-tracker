@@ -1766,53 +1766,144 @@ async function stopScanner() {
   document.getElementById('scanner-start').style.display = 'block';
 }
 
+// Parse OpenFoodFacts nutriments using per-100g values as ground truth
+function parseOFFNutrients(p) {
+  const n = p.nutriments || {};
+  const servingG = parseFloat(p.serving_quantity) || 0;
+  const servingLabel = p.serving_size || '';
+
+  // Always calculate from per-100g (most reliable in OFF)
+  const pro100 = n.proteins_100g || 0;
+  const carb100 = n.carbohydrates_100g || 0;
+  const fat100 = n.fat_100g || 0;
+  // Prefer energy-kcal; fall back to energy (kJ) converted
+  let cal100 = n['energy-kcal_100g'] || 0;
+  if (!cal100 && n['energy_100g']) cal100 = Math.round(n['energy_100g'] / 4.184);
+
+  // Determine serving size: use serving_quantity if sane, else 100g
+  let useGrams = 100;
+  let useLabel = '100g';
+  if (servingG > 0 && servingG < 1000 && servingLabel) {
+    useGrams = servingG;
+    useLabel = servingLabel;
+  }
+
+  const scale = useGrams / 100;
+  const protein = round1(pro100 * scale);
+  const carbs = round1(carb100 * scale);
+  const fat = round1(fat100 * scale);
+  const calories = Math.round(cal100 * scale);
+
+  // Sanity check: calculated cals vs macro-derived cals
+  const macroCals = Math.round(protein * 4 + carbs * 4 + fat * 9);
+  const hasData = pro100 > 0 || carb100 > 0 || fat100 > 0 || cal100 > 0;
+  const calMismatch = hasData && calories > 0 && Math.abs(calories - macroCals) > calories * 0.3;
+  const suspect = !hasData || calMismatch || (!cal100 && !pro100);
+
+  return {
+    name: p.product_name || '',
+    serving: useLabel,
+    servingGrams: useGrams,
+    protein, carbs, fat, calories,
+    suspect,
+  };
+}
+
+// Search USDA by product name and return best match (or null)
+async function usdaFallbackSearch(productName) {
+  const key = state.settings.usdaKey;
+  if (!key || !productName) return null;
+  try {
+    const resp = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(productName)}&pageSize=3&dataType=Branded,Survey%20(FNDDS)&api_key=${key}`);
+    const data = await resp.json();
+    if (!data.foods || data.foods.length === 0) return null;
+    const f = data.foods[0];
+    const getNutrient = (id) => { const n = f.foodNutrients?.find(x => x.nutrientId === id); return n ? n.value : 0; };
+    const servingG = f.servingSize || 100;
+    const scale = servingG / 100;
+    return {
+      name: f.description || productName,
+      serving: f.servingSize ? `${f.servingSize}${f.servingSizeUnit || 'g'}` : '100g',
+      servingGrams: servingG,
+      protein: round1(getNutrient(USDA_NUTRIENT_IDS.protein) * scale),
+      carbs: round1(getNutrient(USDA_NUTRIENT_IDS.carbs) * scale),
+      fat: round1(getNutrient(USDA_NUTRIENT_IDS.fat) * scale),
+      calories: Math.round(getNutrient(USDA_NUTRIENT_IDS.calories) * scale),
+      suspect: false,
+      source: 'usda',
+    };
+  } catch(e) { return null; }
+}
+
 async function lookupBarcode(code) {
   // Check local DB first
   const local = state.foods.find(f => f.barcode === code);
   if (local) {
-    showScanResult(local, code, true);
+    showScanResult(local, code, true, '');
     return;
   }
 
-  // OpenFoodFacts
   document.getElementById('scan-result').style.display = 'block';
   document.getElementById('scan-result').innerHTML = '<div style="text-align:center"><div class="loading-spinner"></div><p>Looking up barcode...</p></div>';
 
+  let food = null;
+  let dataSource = 'OpenFoodFacts';
+  let warning = '';
+
+  // Try OpenFoodFacts first
   try {
     const resp = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json`);
     const data = await resp.json();
     if (data.status === 1 && data.product) {
-      const p = data.product;
-      const n = p.nutriments || {};
-      const servingQty = p.serving_quantity || 100;
-      const food = {
-        id: uid(),
-        name: p.product_name || 'Unknown Product',
-        serving: p.serving_size || `${servingQty}g`,
-        servingGrams: servingQty,
-        protein: round1((n.proteins_serving !== undefined) ? n.proteins_serving : (n.proteins_100g || 0) * servingQty / 100),
-        carbs: round1((n.carbohydrates_serving !== undefined) ? n.carbohydrates_serving : (n.carbohydrates_100g || 0) * servingQty / 100),
-        fat: round1((n.fat_serving !== undefined) ? n.fat_serving : (n.fat_100g || 0) * servingQty / 100),
-        calories: Math.round((n['energy-kcal_serving'] !== undefined) ? n['energy-kcal_serving'] : (n['energy-kcal_100g'] || 0) * servingQty / 100),
-        source: 'scanned',
-        barcode: code,
-        category: '',
-        lastUsed: 0,
-        useCount: 0,
-      };
-      showScanResult(food, code, false);
-    } else {
-      document.getElementById('scan-result').innerHTML = `<p>No product found for barcode <strong>${esc(code)}</strong>.</p><p style="color:var(--text2)">Try manual entry or add the food to your custom database.</p>`;
+      const parsed = parseOFFNutrients(data.product);
+      const productName = parsed.name || data.product.product_name || '';
+
+      // If data looks suspect and USDA key is available, try USDA fallback
+      if (parsed.suspect && state.settings.usdaKey) {
+        document.getElementById('scan-result').innerHTML = '<div style="text-align:center"><div class="loading-spinner"></div><p>Verifying with USDA...</p></div>';
+        const usdaResult = await usdaFallbackSearch(productName);
+        if (usdaResult && usdaResult.calories > 0) {
+          food = { id: uid(), ...usdaResult, name: productName || usdaResult.name, barcode: code, source: 'scanned', category: '', lastUsed: 0, useCount: 0 };
+          dataSource = 'USDA (verified)';
+        }
+      }
+
+      // Use OFF data if USDA didn't produce a better result
+      if (!food) {
+        food = {
+          id: uid(), name: productName || 'Unknown Product',
+          serving: parsed.serving, servingGrams: parsed.servingGrams,
+          protein: parsed.protein, carbs: parsed.carbs, fat: parsed.fat, calories: parsed.calories,
+          source: 'scanned', barcode: code, category: '', lastUsed: 0, useCount: 0,
+        };
+        if (parsed.suspect) {
+          warning = 'Nutrition data may be approximate — verify before saving';
+        }
+      }
     }
-  } catch(e) {
-    document.getElementById('scan-result').innerHTML = '<p>Error looking up barcode. Check your internet connection.</p>';
+  } catch(e) {}
+
+  // If OFF had no result, try USDA search as last resort
+  if (!food && state.settings.usdaKey) {
+    document.getElementById('scan-result').innerHTML = '<div style="text-align:center"><div class="loading-spinner"></div><p>Searching USDA...</p></div>';
+    const usdaResult = await usdaFallbackSearch(code);
+    if (usdaResult && usdaResult.calories > 0) {
+      food = { id: uid(), ...usdaResult, barcode: code, source: 'scanned', category: '', lastUsed: 0, useCount: 0 };
+      dataSource = 'USDA';
+    }
+  }
+
+  if (food) {
+    showScanResult(food, code, false, warning, dataSource);
+  } else {
+    document.getElementById('scan-result').innerHTML = `<p>No product found for barcode <strong>${esc(code)}</strong>.</p><p style="color:var(--text2)">Try manual entry or add the food to your custom database.</p>`;
   }
 }
 
 // Store last scan result to avoid JSON in attributes
 let lastScanFood = null;
 
-function showScanResult(food, code, isLocal) {
+function showScanResult(food, code, isLocal, warning, dataSource) {
   lastScanFood = food;
   // Ensure food is saved to DB
   if (!isLocal) {
@@ -1829,11 +1920,14 @@ function showScanResult(food, code, isLocal) {
   }
   const f = lastScanFood;
   const grams = f.servingGrams || 0;
+  const srcLabel = isLocal ? 'from your database' : (dataSource || 'OpenFoodFacts');
+  const warningHtml = warning ? `<p style="font-size:12px;color:var(--danger);margin-top:4px;font-weight:500">${esc(warning)}</p>` : '';
   const el = document.getElementById('scan-result');
   el.style.display = 'block';
   el.innerHTML = `
     <h4>${esc(f.name)}</h4>
-    <p style="font-size:13px;color:var(--text3)">Barcode: ${esc(code)} ${isLocal ? '(from your database)' : '(OpenFoodFacts)'}</p>
+    <p style="font-size:13px;color:var(--text3)">Barcode: ${esc(code)} (${srcLabel})</p>
+    ${warningHtml}
     <div style="margin:8px 0;font-size:14px">
       <strong>${f.calories}</strong> cal | <strong>${f.protein}g</strong> P | <strong>${f.carbs}g</strong> C | <strong>${f.fat}g</strong> F
     </div>
