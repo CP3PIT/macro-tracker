@@ -341,6 +341,50 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
 .food-search-item:hover, .food-search-item:active { background: var(--bg3); }
 .food-search-item .fs-name { font-size: 14px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .food-search-item .fs-meta { font-size: 12px; color: var(--text3); flex-shrink: 0; margin-left: 8px; }
+
+/* ===== Duo Dashboard ===== */
+.dash-date-nav {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  margin-bottom: 14px;
+}
+.dash-date-nav button {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font-size: 20px; padding: 8px; line-height: 1;
+}
+.dash-date-nav .dash-date-label { font-weight: 600; font-size: 16px; }
+.dash-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 420px) { .dash-cards { grid-template-columns: 1fr; } }
+.dash-person {
+  background: var(--bg2); border-radius: var(--radius); padding: 14px;
+  border-top: 3px solid var(--border);
+}
+.dash-person.chris { border-top-color: #4a90d9; }
+.dash-person.erica { border-top-color: #e91e8a; }
+.dash-person-name { font-weight: 700; font-size: 15px; margin-bottom: 2px; }
+.dash-day-type { font-size: 12px; color: var(--text3); margin-bottom: 10px; }
+.dash-macro-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.dash-macro-label { font-size: 11px; color: var(--text2); width: 28px; flex-shrink: 0; font-weight: 600; }
+.dash-macro-bar {
+  flex: 1; height: 8px; border-radius: 4px; background: var(--bg3); overflow: hidden;
+}
+.dash-macro-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+.dash-macro-bar-fill.cal { background: var(--cal-color); }
+.dash-macro-bar-fill.pro { background: var(--pro-color); }
+.dash-macro-bar-fill.carb { background: var(--carb-color); }
+.dash-macro-bar-fill.fat { background: var(--fat-color); }
+.dash-macro-val { font-size: 11px; color: var(--text2); width: 70px; flex-shrink: 0; text-align: right; }
+.dash-meals-toggle {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font-size: 12px; padding: 6px 0; width: 100%; text-align: left;
+}
+.dash-meal-section { display: none; }
+.dash-meal-section.open { display: block; }
+.dash-meal-title { font-size: 12px; font-weight: 600; color: var(--text2); margin: 6px 0 3px; }
+.dash-meal-item { font-size: 12px; color: var(--text3); padding: 2px 0; }
+.dash-no-data { text-align: center; color: var(--text3); font-size: 13px; padding: 20px 8px; }
+.nav-btn { min-width: 48px; padding: 8px; }
 </style>
 </head>
 <body>
@@ -461,6 +505,17 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
   </div>
 </div>
 
+<!-- ===== DUO DASHBOARD SCREEN ===== -->
+<div id="screen-dashboard" class="screen">
+  <div class="section-title">Duo Dashboard</div>
+  <div class="dash-date-nav">
+    <button data-action="dash-prev-day">&larr;</button>
+    <span class="dash-date-label" id="dash-date-label">Today</span>
+    <button data-action="dash-next-day">&rarr;</button>
+  </div>
+  <div class="dash-cards" id="dash-cards"></div>
+</div>
+
 <!-- ===== SETTINGS SCREEN ===== -->
 <div id="screen-settings" class="screen">
   <div class="section-title">Settings</div>
@@ -551,6 +606,10 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
   <button class="nav-btn" data-screen="history">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     <span>History</span>
+  </button>
+  <button class="nav-btn" data-screen="dashboard">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+    <span>Duo</span>
   </button>
   <button class="nav-btn" data-screen="settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -840,6 +899,119 @@ function deleteFoodFromFirebase(foodId) {
   fetch(path + '/' + foodId + '.json', { method: 'DELETE' }).catch(() => {});
 }
 
+// ===== FIREBASE LOG SYNC =====
+let fbLogEventSource = null;
+
+function fbLogsPath() {
+  const key = state.settings.syncKey;
+  if (!key) return null;
+  return FB_DB + '/sync/' + key + '/logs';
+}
+
+function getPartnerProfile() {
+  return state.activeProfile === 'male' ? 'female' : 'male';
+}
+
+// Push a single day/profile log to Firebase
+function syncLogToFirebase(date, profile) {
+  const path = fbLogsPath();
+  if (!path) return;
+  const log = state.logs[date] && state.logs[date][profile];
+  if (!log) return;
+  fetch(path + '/' + date + '/' + profile + '.json', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(log),
+  }).catch(() => {});
+}
+
+// Fetch partner logs for a specific date (one-time REST call)
+function fetchPartnerLogsForDate(date) {
+  const path = fbLogsPath();
+  if (!path) return Promise.resolve();
+  return fetch(path + '/' + date + '.json').then(r => r.json()).then(data => {
+    if (!data) return;
+    ['male', 'female'].forEach(p => {
+      if (data[p]) {
+        if (!state.partnerLogs[date]) state.partnerLogs[date] = {};
+        state.partnerLogs[date][p] = data[p];
+      }
+    });
+  }).catch(() => {});
+}
+
+// Start real-time log sync via SSE
+function startLogSync() {
+  const path = fbLogsPath();
+  if (!path) return;
+
+  if (fbLogEventSource) { fbLogEventSource.close(); fbLogEventSource = null; }
+
+  // Initial pull for today
+  const today = todayStr();
+  fetchPartnerLogsForDate(today).then(() => {
+    if (state.currentScreen === 'dashboard') renderDashboard();
+  });
+
+  // SSE listener for real-time log updates
+  try {
+    fbLogEventSource = new EventSource(path + '.json');
+    fbLogEventSource.addEventListener('put', e => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (!msg.data) return;
+        const msgPath = msg.path; // e.g. "/2026-02-10/male" or "/"
+        if (msgPath === '/') {
+          // Full dataset replace
+          if (msg.data && typeof msg.data === 'object') {
+            Object.keys(msg.data).forEach(date => {
+              if (!state.partnerLogs[date]) state.partnerLogs[date] = {};
+              const dayData = msg.data[date];
+              if (dayData && typeof dayData === 'object') {
+                Object.keys(dayData).forEach(prof => {
+                  state.partnerLogs[date][prof] = dayData[prof];
+                });
+              }
+            });
+          }
+        } else {
+          // Partial update: path like "/2026-02-10/male" or "/2026-02-10"
+          const parts = msgPath.split('/').filter(Boolean);
+          if (parts.length >= 1) {
+            const date = parts[0];
+            if (!state.partnerLogs[date]) state.partnerLogs[date] = {};
+            if (parts.length >= 2) {
+              const prof = parts[1];
+              state.partnerLogs[date][prof] = msg.data;
+            } else if (msg.data && typeof msg.data === 'object') {
+              Object.keys(msg.data).forEach(prof => {
+                state.partnerLogs[date][prof] = msg.data[prof];
+              });
+            }
+          }
+        }
+        if (state.currentScreen === 'dashboard') renderDashboard();
+      } catch(err) {}
+    });
+    fbLogEventSource.addEventListener('patch', e => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (!msg.data) return;
+        Object.keys(msg.data).forEach(date => {
+          if (!state.partnerLogs[date]) state.partnerLogs[date] = {};
+          const dayData = msg.data[date];
+          if (dayData && typeof dayData === 'object') {
+            Object.keys(dayData).forEach(prof => {
+              state.partnerLogs[date][prof] = dayData[prof];
+            });
+          }
+        });
+        if (state.currentScreen === 'dashboard') renderDashboard();
+      } catch(err) {}
+    });
+  } catch(e) {}
+}
+
 // Listen for real-time changes via SSE
 function startFoodSync() {
   const path = fbFoodsPath();
@@ -943,6 +1115,8 @@ let state = {
   historyWeekOffset: 0,
   recMeal: 0,
   recItems: [],
+  partnerLogs: {},
+  dashboardDate: todayStr(),
 };
 
 // ===== UTILITIES =====
@@ -983,7 +1157,7 @@ function toast(msg) {
 // ===== STORAGE =====
 function saveProfiles() { localStorage.setItem(STORAGE_KEYS.profiles, JSON.stringify(state.profiles)); }
 function saveFoods() { localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods)); syncFoodsToFirebase(); }
-function saveLogs() { localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(state.logs)); }
+function saveLogs() { localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(state.logs)); syncLogToFirebase(state.currentDate, state.activeProfile); }
 function saveSettings() { localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(state.settings)); }
 
 function loadAll() {
@@ -1083,6 +1257,10 @@ function navigateTo(screen) {
   if (screen === 'history') renderHistory();
   if (screen === 'settings') renderSettings();
   if (screen === 'scan') initScanScreen();
+  if (screen === 'dashboard') {
+    fetchPartnerLogsForDate(state.dashboardDate).then(() => renderDashboard());
+    renderDashboard();
+  }
 }
 
 // ===== GET CURRENT LOG =====
@@ -1115,6 +1293,39 @@ function getTotals(date, profile) {
   if (!log) return { calories: 0, protein: 0, carbs: 0, fat: 0 };
   const t = { calories: 0, protein: 0, carbs: 0, fat: 0 };
   log.meals.forEach(meal => {
+    meal.forEach(item => {
+      t.calories += item.calories || 0;
+      t.protein += item.protein || 0;
+      t.carbs += item.carbs || 0;
+      t.fat += item.fat || 0;
+    });
+  });
+  return t;
+}
+
+// Get targets for any profile and date (checks log dayType, falls back to auto-detect from day of week)
+function getTargetsFor(profileId, date, log) {
+  const prof = state.profiles[profileId];
+  if (!prof) return { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  // Check if the log has a dayType set
+  if (log && log.dayType && prof.dayTypes[log.dayType]) {
+    return prof.dayTypes[log.dayType];
+  }
+  // Auto-detect from day of week
+  const dayPrefixes = ['sun','mon','tue','wed','thu','fri','sat'];
+  const dow = parseDate(date).getDay();
+  const prefix = dayPrefixes[dow];
+  const match = Object.keys(prof.dayTypes).find(k => k.toLowerCase().startsWith(prefix));
+  if (match) return prof.dayTypes[match];
+  return { calories: 0, protein: 0, carbs: 0, fat: 0 };
+}
+
+// Get totals from a log object directly (for partner logs)
+function getTotalsFromLog(log) {
+  if (!log || !log.meals) return { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const t = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  log.meals.forEach(meal => {
+    if (!Array.isArray(meal)) return;
     meal.forEach(item => {
       t.calories += item.calories || 0;
       t.protein += item.protein || 0;
@@ -1315,6 +1526,93 @@ function renderHistory() {
       </div>
     `;
   }
+}
+
+// ===== RENDER: DUO DASHBOARD =====
+function renderDashboard() {
+  document.getElementById('dash-date-label').textContent = formatDate(state.dashboardDate);
+  const container = document.getElementById('dash-cards');
+  const profiles = ['male', 'female'];
+  const cssClass = { male: 'chris', female: 'erica' };
+
+  let html = '';
+  profiles.forEach(pid => {
+    const prof = state.profiles[pid];
+    const profName = prof ? prof.name : pid;
+
+    // Get log data: own profile from state.logs, partner from partnerLogs
+    let log = null;
+    if (pid === state.activeProfile) {
+      log = peekLog(state.dashboardDate, pid);
+    } else {
+      log = (state.partnerLogs[state.dashboardDate] && state.partnerLogs[state.dashboardDate][pid]) || null;
+    }
+    // Also check partner logs for own profile (in case we're viewing another device's perspective)
+    if (!log && state.partnerLogs[state.dashboardDate] && state.partnerLogs[state.dashboardDate][pid]) {
+      log = state.partnerLogs[state.dashboardDate][pid];
+    }
+
+    const targets = getTargetsFor(pid, state.dashboardDate, log);
+    const totals = log ? getTotalsFromLog(log) : { calories: 0, protein: 0, carbs: 0, fat: 0 };
+
+    // Determine day type label
+    let dayTypeLabel = '';
+    if (log && log.dayType) {
+      dayTypeLabel = log.dayType;
+    } else {
+      const dayPrefixes = ['sun','mon','tue','wed','thu','fri','sat'];
+      const dow = parseDate(state.dashboardDate).getDay();
+      const prefix = dayPrefixes[dow];
+      if (prof) {
+        const match = Object.keys(prof.dayTypes).find(k => k.toLowerCase().startsWith(prefix));
+        if (match) dayTypeLabel = match;
+      }
+    }
+
+    const macros = [
+      { key: 'cal', label: 'Cal', val: Math.round(totals.calories), target: targets.calories },
+      { key: 'pro', label: 'Pro', val: round1(totals.protein), target: targets.protein },
+      { key: 'carb', label: 'Crb', val: round1(totals.carbs), target: targets.carbs },
+      { key: 'fat', label: 'Fat', val: round1(totals.fat), target: targets.fat },
+    ];
+
+    let macroHtml = macros.map(m => {
+      const pct = m.target > 0 ? Math.min(100, (m.val / m.target) * 100) : 0;
+      return `<div class="dash-macro-row">
+        <span class="dash-macro-label">${m.label}</span>
+        <div class="dash-macro-bar"><div class="dash-macro-bar-fill ${m.key}" style="width:${pct.toFixed(1)}%"></div></div>
+        <span class="dash-macro-val">${m.val}/${m.target}</span>
+      </div>`;
+    }).join('');
+
+    // Meal breakdown
+    let mealHtml = '';
+    const hasMeals = log && log.meals && log.meals.some(m => Array.isArray(m) && m.length > 0);
+    if (hasMeals) {
+      log.meals.forEach((meal, mi) => {
+        if (!Array.isArray(meal) || meal.length === 0) return;
+        mealHtml += `<div class="dash-meal-title">${MEAL_NAMES[mi]}</div>`;
+        meal.forEach(item => {
+          const name = item.name || 'Unknown';
+          const cals = Math.round(item.calories || 0);
+          mealHtml += `<div class="dash-meal-item">${name} &mdash; ${cals} cal</div>`;
+        });
+      });
+    }
+
+    const noDataMsg = !hasMeals ? '<div class="dash-no-data">No food logged yet</div>' : '';
+
+    html += `<div class="dash-person ${cssClass[pid]}">
+      <div class="dash-person-name">${profName}</div>
+      <div class="dash-day-type">${dayTypeLabel || 'No day type'}</div>
+      ${macroHtml}
+      ${noDataMsg}
+      ${hasMeals ? `<button class="dash-meals-toggle" data-action="toggle-dash-meals" data-target="dash-meals-${pid}">Show meals &#9662;</button>
+      <div class="dash-meal-section" id="dash-meals-${pid}">${mealHtml}</div>` : ''}
+    </div>`;
+  });
+
+  container.innerHTML = html;
 }
 
 // ===== RENDER: SETTINGS SCREEN =====
@@ -2513,6 +2811,26 @@ document.addEventListener('click', (e) => {
       renderToday();
       break;
 
+    // Dashboard date nav
+    case 'dash-prev-day':
+      state.dashboardDate = shiftDate(state.dashboardDate, -1);
+      fetchPartnerLogsForDate(state.dashboardDate).then(() => renderDashboard());
+      renderDashboard();
+      break;
+    case 'dash-next-day':
+      state.dashboardDate = shiftDate(state.dashboardDate, 1);
+      fetchPartnerLogsForDate(state.dashboardDate).then(() => renderDashboard());
+      renderDashboard();
+      break;
+    case 'toggle-dash-meals': {
+      const target = document.getElementById(btn.dataset.target);
+      if (target) {
+        target.classList.toggle('open');
+        btn.innerHTML = target.classList.contains('open') ? 'Hide meals &#9652;' : 'Show meals &#9662;';
+      }
+      break;
+    }
+
     // Meals
     case 'add-food-to-meal':
       openAddFoodModal(parseInt(btn.dataset.meal));
@@ -2738,6 +3056,7 @@ document.addEventListener('click', (e) => {
         state.settings.syncKey = newKey;
         saveSettings();
         startFoodSync();
+        startLogSync();
         toast('Sync key saved — resyncing');
       } else {
         toast('Key must be at least 8 characters');
@@ -2770,6 +3089,7 @@ document.addEventListener('click', (e) => {
         saveSettings();
         applyTheme();
         startFoodSync();
+        startLogSync();
         renderToday();
         toast('All data cleared');
       }
@@ -2856,6 +3176,7 @@ loadAll();
 applyTheme();
 renderToday();
 startFoodSync();
+startLogSync();
 
 // ===== PWA Service Worker =====
 if ('serviceWorker' in navigator) {
