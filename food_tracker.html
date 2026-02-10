@@ -1587,15 +1587,10 @@ function renderDashboard() {
     const prof = state.profiles[pid];
     const profName = prof ? prof.name : pid;
 
-    // Get log data: own profile from state.logs, partner from partnerLogs
-    let log = null;
-    if (pid === state.activeProfile) {
-      log = peekLog(state.dashboardDate, pid);
-    } else {
-      log = (state.partnerLogs[state.dashboardDate] && state.partnerLogs[state.dashboardDate][pid]) || null;
-    }
-    // Also check partner logs for own profile (in case we're viewing another device's perspective)
-    if (!log && state.partnerLogs[state.dashboardDate] && state.partnerLogs[state.dashboardDate][pid]) {
+    // Get log data: prefer local if it has food, otherwise use Firebase (partnerLogs)
+    let log = peekLog(state.dashboardDate, pid);
+    const localHasFood = log && log.meals && log.meals.some(m => m.length > 0);
+    if (!localHasFood && state.partnerLogs[state.dashboardDate] && state.partnerLogs[state.dashboardDate][pid]) {
       log = state.partnerLogs[state.dashboardDate][pid];
     }
 
