@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://macro-tracker-17b41-default-rtdb.firebaseio.com https://world.openfoodfacts.org https://api.nal.usda.gov; img-src 'self' data: blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Macro Tracker</title>
 <link rel="manifest" href="./manifest.json">
@@ -10,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Macros">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234a90d9'/><text x='50' y='68' font-size='50' text-anchor='middle' fill='white' font-family='Arial,sans-serif' font-weight='bold'>M</text></svg>">
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>
 <style>
 /* ===== CSS Custom Properties ===== */
 :root {
@@ -511,6 +512,18 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
   </div>
 
   <div class="settings-section">
+    <h3>Firebase Sync Key</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">Share this key between your devices to sync the food database. Both devices must use the same key.</p>
+    <div class="form-group">
+      <input type="text" id="sync-key-input" placeholder="Sync key" style="font-family:monospace;font-size:13px">
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-sm btn-primary" data-action="save-sync-key">Save Key</button>
+      <button class="btn btn-sm btn-secondary" data-action="copy-sync-key">Copy Key</button>
+    </div>
+  </div>
+
+  <div class="settings-section">
     <h3>Data</h3>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-sm btn-secondary" data-action="export-json">Export All Data</button>
@@ -789,13 +802,20 @@ const USDA_NUTRIENT_IDS = { protein: 1003, fat: 1004, carbs: 1005, calories: 100
 
 // ===== FIREBASE FOOD SYNC =====
 const FB_DB = 'https://macro-tracker-17b41-default-rtdb.firebaseio.com';
-const FB_FOODS = FB_DB + '/foods';
+let fbEventSource = null;
+function fbFoodsPath() {
+  const key = state.settings.syncKey;
+  if (!key) return null;
+  return FB_DB + '/sync/' + key + '/foods';
+}
 
 // Push all local foods to Firebase (keyed by id)
 function syncFoodsToFirebase() {
+  const path = fbFoodsPath();
+  if (!path) return;
   const foodMap = {};
   state.foods.forEach(f => { foodMap[f.id] = f; });
-  fetch(FB_FOODS + '.json', {
+  fetch(path + '.json', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(foodMap),
@@ -804,7 +824,9 @@ function syncFoodsToFirebase() {
 
 // Push a single food to Firebase
 function syncFoodToFirebase(food) {
-  fetch(FB_FOODS + '/' + food.id + '.json', {
+  const path = fbFoodsPath();
+  if (!path) return;
+  fetch(path + '/' + food.id + '.json', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(food),
@@ -813,13 +835,21 @@ function syncFoodToFirebase(food) {
 
 // Delete a food from Firebase
 function deleteFoodFromFirebase(foodId) {
-  fetch(FB_FOODS + '/' + foodId + '.json', { method: 'DELETE' }).catch(() => {});
+  const path = fbFoodsPath();
+  if (!path) return;
+  fetch(path + '/' + foodId + '.json', { method: 'DELETE' }).catch(() => {});
 }
 
 // Listen for real-time changes via SSE
 function startFoodSync() {
+  const path = fbFoodsPath();
+  if (!path) return;
+
+  // Close existing SSE connection if any
+  if (fbEventSource) { fbEventSource.close(); fbEventSource = null; }
+
   // Initial pull: merge remote foods into local
-  fetch(FB_FOODS + '.json').then(r => r.json()).then(remote => {
+  fetch(path + '.json').then(r => r.json()).then(remote => {
     if (!remote) { syncFoodsToFirebase(); return; }
     let changed = false;
     Object.values(remote).forEach(rf => {
@@ -842,13 +872,13 @@ function startFoodSync() {
 
   // SSE listener for real-time updates
   try {
-    const es = new EventSource(FB_FOODS + '.json');
-    es.addEventListener('put', e => {
+    fbEventSource = new EventSource(path + '.json');
+    fbEventSource.addEventListener('put', e => {
       try {
         const msg = JSON.parse(e.data);
         if (!msg.data) return;
-        const path = msg.path; // "/" for full replace, "/foodId" for single
-        if (path === '/') {
+        const msgPath = msg.path; // "/" for full replace, "/foodId" for single
+        if (msgPath === '/') {
           // Full dataset
           let changed = false;
           Object.values(msg.data).forEach(rf => {
@@ -875,7 +905,7 @@ function startFoodSync() {
         }
       } catch(err) {}
     });
-    es.addEventListener('patch', e => {
+    fbEventSource.addEventListener('patch', e => {
       try {
         const msg = JSON.parse(e.data);
         if (!msg.data) return;
@@ -900,7 +930,7 @@ let state = {
   profiles: null,
   foods: [],
   logs: {},
-  settings: { theme: 'light', usdaKey: '8SmtixIXYg3Ho5whXbCPxshggoULMiBEVoGX7Jyg' },
+  settings: { theme: 'light', usdaKey: '', syncKey: '' },
   // transient UI state
   addFoodMeal: 0,
   addFoodSelected: null,
@@ -962,6 +992,12 @@ function loadAll() {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEYS.settings));
     if (s) state.settings = { ...state.settings, ...s };
   } catch(e) {}
+
+  // Generate a sync key for Firebase if one doesn't exist
+  if (!state.settings.syncKey) {
+    state.settings.syncKey = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : uid() + uid() + uid();
+    saveSettings();
+  }
 
   if (!state.profiles) seedData();
   if (!state.foods || state.foods.length === 0) seedFoods();
@@ -1284,6 +1320,7 @@ function renderSettings() {
   document.getElementById('name-male').value = state.profiles.male.name;
   document.getElementById('name-female').value = state.profiles.female.name;
   document.getElementById('usda-key-input').value = state.settings.usdaKey || '';
+  document.getElementById('sync-key-input').value = state.settings.syncKey || '';
 
   document.getElementById('settings-male-name').textContent = state.profiles.male.name + ' - Day Types';
   document.getElementById('settings-female-name').textContent = state.profiles.female.name + ' - Day Types';
@@ -2692,6 +2729,25 @@ document.addEventListener('click', (e) => {
       saveSettings();
       toast('API key saved');
       break;
+    case 'save-sync-key': {
+      const newKey = document.getElementById('sync-key-input').value.trim();
+      if (newKey && newKey.length >= 8) {
+        state.settings.syncKey = newKey;
+        saveSettings();
+        startFoodSync();
+        toast('Sync key saved — resyncing');
+      } else {
+        toast('Key must be at least 8 characters');
+      }
+      break;
+    }
+    case 'copy-sync-key': {
+      const syncKey = state.settings.syncKey || '';
+      if (syncKey) {
+        navigator.clipboard.writeText(syncKey).then(() => toast('Sync key copied')).catch(() => toast('Copy failed'));
+      }
+      break;
+    }
     case 'export-json':
       exportJSON();
       break;
@@ -2707,8 +2763,10 @@ document.addEventListener('click', (e) => {
         state.logs = {};
         seedData();
         seedFoods();
-        state.settings = { theme: 'light', usdaKey: '' };
+        state.settings = { theme: 'light', usdaKey: '', syncKey: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : uid() + uid() + uid() };
+        saveSettings();
         applyTheme();
+        startFoodSync();
         renderToday();
         toast('All data cleared');
       }
