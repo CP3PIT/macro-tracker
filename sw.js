@@ -1,4 +1,4 @@
-const CACHE_NAME = 'macro-tracker-v8';
+const CACHE_NAME = 'macro-tracker-v9';
 const ASSETS = [
   './food_tracker.html',
   './manifest.json',

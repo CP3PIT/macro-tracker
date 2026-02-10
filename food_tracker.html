@@ -918,6 +918,8 @@ function syncLogToFirebase(date, profile) {
   if (!path) return;
   const log = state.logs[date] && state.logs[date][profile];
   if (!log) return;
+  // Only push if there's actual food logged — prevents empty auto-created logs from overwriting partner data
+  if (!log.meals || !log.meals.some(m => m.length > 0)) return;
   fetch(path + '/' + date + '/' + profile + '.json', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -925,13 +927,13 @@ function syncLogToFirebase(date, profile) {
   }).catch(() => {});
 }
 
-// Push all local log data for a given date to Firebase (both profiles)
+// Push local log data for a given date to Firebase (only profiles with actual food)
 function syncLocalLogsForDate(date) {
   const path = fbLogsPath();
   if (!path) return;
   ['male', 'female'].forEach(p => {
     const log = state.logs[date] && state.logs[date][p];
-    if (log) {
+    if (log && log.meals && log.meals.some(m => m.length > 0)) {
       fetch(path + '/' + date + '/' + p + '.json', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -3328,7 +3330,6 @@ applyTheme();
 renderToday();
 startFoodSync();
 startLogSync();
-syncLocalLogsForDate(todayStr());
 
 // ===== PWA Service Worker =====
 if ('serviceWorker' in navigator) {
