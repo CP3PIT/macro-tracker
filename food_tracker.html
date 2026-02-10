@@ -853,6 +853,7 @@ function startFoodSync() {
     if (!remote) { syncFoodsToFirebase(); return; }
     let changed = false;
     Object.values(remote).forEach(rf => {
+      if (!rf || !rf.id || !rf.name) return;
       const local = state.foods.find(f => f.id === rf.id);
       if (!local) {
         state.foods.push(rf);
@@ -882,6 +883,7 @@ function startFoodSync() {
           // Full dataset
           let changed = false;
           Object.values(msg.data).forEach(rf => {
+            if (!rf || !rf.id || !rf.name) return;
             const local = state.foods.find(f => f.id === rf.id);
             if (!local) { state.foods.push(rf); changed = true; }
             else if ((rf.lastUsed || 0) > (local.lastUsed || 0)) { Object.assign(local, rf); changed = true; }
@@ -910,7 +912,7 @@ function startFoodSync() {
         const msg = JSON.parse(e.data);
         if (!msg.data) return;
         Object.values(msg.data).forEach(rf => {
-          if (!rf || !rf.id) return;
+          if (!rf || !rf.id || !rf.name) return;
           const local = state.foods.find(f => f.id === rf.id);
           if (!local) state.foods.push(rf);
           else Object.assign(local, rf);
@@ -1240,13 +1242,14 @@ function renderFoods() {
   const activeFilter = document.querySelector('#food-filters .filter-tab.active')?.dataset.filter || 'all';
 
   let filtered = state.foods.filter(f => {
+    if (!f || !f.name) return false;
     if (search && !f.name.toLowerCase().includes(search)) return false;
     if (activeFilter !== 'all' && f.source !== activeFilter) return false;
     return true;
   });
 
   // Sort by useCount desc, then name
-  filtered.sort((a, b) => (b.useCount || 0) - (a.useCount || 0) || a.name.localeCompare(b.name));
+  filtered.sort((a, b) => (b.useCount || 0) - (a.useCount || 0) || (a.name || '').localeCompare(b.name || ''));
 
   const list = document.getElementById('foods-list');
   if (filtered.length === 0) {
@@ -1558,8 +1561,8 @@ function openAddFoodModal(mealIndex) {
 
 function renderAddFoodSearch(q) {
   const query = q.toLowerCase();
-  let results = state.foods.filter(f => !query || f.name.toLowerCase().includes(query));
-  results.sort((a, b) => (b.useCount || 0) - (a.useCount || 0) || a.name.localeCompare(b.name));
+  let results = state.foods.filter(f => f && f.name && (!query || f.name.toLowerCase().includes(query)));
+  results.sort((a, b) => (b.useCount || 0) - (a.useCount || 0) || (a.name || '').localeCompare(b.name || ''));
   results = results.slice(0, 30);
 
   const listHtml = results.length === 0
