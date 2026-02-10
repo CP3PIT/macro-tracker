@@ -787,6 +787,111 @@ const STORAGE_KEYS = {
 const MEAL_NAMES = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 const USDA_NUTRIENT_IDS = { protein: 1003, fat: 1004, carbs: 1005, calories: 1008 };
 
+// ===== FIREBASE FOOD SYNC =====
+const FB_DB = 'https://macro-tracker-17b41-default-rtdb.firebaseio.com';
+const FB_FOODS = FB_DB + '/foods';
+
+// Push all local foods to Firebase (keyed by id)
+function syncFoodsToFirebase() {
+  const foodMap = {};
+  state.foods.forEach(f => { foodMap[f.id] = f; });
+  fetch(FB_FOODS + '.json', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(foodMap),
+  }).catch(() => {});
+}
+
+// Push a single food to Firebase
+function syncFoodToFirebase(food) {
+  fetch(FB_FOODS + '/' + food.id + '.json', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(food),
+  }).catch(() => {});
+}
+
+// Delete a food from Firebase
+function deleteFoodFromFirebase(foodId) {
+  fetch(FB_FOODS + '/' + foodId + '.json', { method: 'DELETE' }).catch(() => {});
+}
+
+// Listen for real-time changes via SSE
+function startFoodSync() {
+  // Initial pull: merge remote foods into local
+  fetch(FB_FOODS + '.json').then(r => r.json()).then(remote => {
+    if (!remote) { syncFoodsToFirebase(); return; }
+    let changed = false;
+    Object.values(remote).forEach(rf => {
+      const local = state.foods.find(f => f.id === rf.id);
+      if (!local) {
+        state.foods.push(rf);
+        changed = true;
+      } else if ((rf.useCount || 0) > (local.useCount || 0) || (rf.lastUsed || 0) > (local.lastUsed || 0)) {
+        Object.assign(local, rf);
+        changed = true;
+      }
+    });
+    if (changed) {
+      localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
+      if (typeof renderToday === 'function') renderToday();
+    }
+    // Push any local-only foods to Firebase
+    syncFoodsToFirebase();
+  }).catch(() => {});
+
+  // SSE listener for real-time updates
+  try {
+    const es = new EventSource(FB_FOODS + '.json');
+    es.addEventListener('put', e => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (!msg.data) return;
+        const path = msg.path; // "/" for full replace, "/foodId" for single
+        if (path === '/') {
+          // Full dataset
+          let changed = false;
+          Object.values(msg.data).forEach(rf => {
+            const local = state.foods.find(f => f.id === rf.id);
+            if (!local) { state.foods.push(rf); changed = true; }
+            else if ((rf.lastUsed || 0) > (local.lastUsed || 0)) { Object.assign(local, rf); changed = true; }
+          });
+          if (changed) {
+            localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
+            if (typeof renderToday === 'function') renderToday();
+          }
+        } else {
+          // Single food update
+          const rf = msg.data;
+          if (!rf || !rf.id) return;
+          const local = state.foods.find(f => f.id === rf.id);
+          if (!local) {
+            state.foods.push(rf);
+          } else {
+            Object.assign(local, rf);
+          }
+          localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
+          if (typeof renderToday === 'function') renderToday();
+        }
+      } catch(err) {}
+    });
+    es.addEventListener('patch', e => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (!msg.data) return;
+        Object.values(msg.data).forEach(rf => {
+          if (!rf || !rf.id) return;
+          const local = state.foods.find(f => f.id === rf.id);
+          if (!local) state.foods.push(rf);
+          else Object.assign(local, rf);
+        });
+        localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
+        if (typeof renderToday === 'function') renderToday();
+      } catch(err) {}
+    });
+  } catch(e) {}
+}
+
 // ===== APPLICATION STATE =====
 let state = {
   currentScreen: 'today',
@@ -845,7 +950,7 @@ function toast(msg) {
 
 // ===== STORAGE =====
 function saveProfiles() { localStorage.setItem(STORAGE_KEYS.profiles, JSON.stringify(state.profiles)); }
-function saveFoods() { localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods)); }
+function saveFoods() { localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods)); syncFoodsToFirebase(); }
 function saveLogs() { localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(state.logs)); }
 function saveSettings() { localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(state.settings)); }
 
@@ -1741,6 +1846,7 @@ function saveFoodForm() {
 function deleteFoodForm() {
   if (!state.editingFoodId) return;
   if (!confirm('Delete this food?')) return;
+  deleteFoodFromFirebase(state.editingFoodId);
   state.foods = state.foods.filter(f => f.id !== state.editingFoodId);
   saveFoods();
   closeModal('modal-food-form');
@@ -2688,6 +2794,7 @@ document.getElementById('manual-barcode-input').addEventListener('keydown', (e) 
 loadAll();
 applyTheme();
 renderToday();
+startFoodSync();
 
 // ===== PWA Service Worker =====
 if ('serviceWorker' in navigator) {
