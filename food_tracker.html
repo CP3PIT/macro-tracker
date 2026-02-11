@@ -1061,6 +1061,7 @@ function startFoodSync() {
     if (changed) {
       localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
       if (typeof renderToday === 'function') renderToday();
+      if (state.currentScreen === 'foods' && typeof renderFoods === 'function') renderFoods();
     }
     // Push any local-only foods to Firebase
     syncFoodsToFirebase();
@@ -1087,6 +1088,7 @@ function startFoodSync() {
           if (changed) {
             localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
             if (typeof renderToday === 'function') renderToday();
+            if (state.currentScreen === 'foods' && typeof renderFoods === 'function') renderFoods();
           }
         } else {
           // Single food update
@@ -1101,6 +1103,7 @@ function startFoodSync() {
           }
           localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
           if (typeof renderToday === 'function') renderToday();
+          if (state.currentScreen === 'foods' && typeof renderFoods === 'function') renderFoods();
         }
       } catch(err) {}
     });
@@ -1117,6 +1120,7 @@ function startFoodSync() {
         });
         localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
         if (typeof renderToday === 'function') renderToday();
+        if (state.currentScreen === 'foods' && typeof renderFoods === 'function') renderFoods();
       } catch(err) {}
     });
   } catch(e) {}
@@ -3325,6 +3329,18 @@ applyTheme();
 renderToday();
 startFoodSync();
 startLogSync();
+
+// Re-sync when app returns from background (SSE connections die on mobile sleep)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    startFoodSync();
+    startLogSync();
+    // Re-render current screen with fresh data
+    if (state.currentScreen === 'today') renderToday();
+    else if (state.currentScreen === 'foods') renderFoods();
+    else if (state.currentScreen === 'dashboard') renderDashboard();
+  }
+});
 
 // ===== PWA Service Worker =====
 if ('serviceWorker' in navigator) {
