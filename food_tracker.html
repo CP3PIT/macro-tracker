@@ -868,14 +868,14 @@ function fbFoodsPath() {
   return FB_DB + '/sync/' + key + '/foods';
 }
 
-// Push all local foods to Firebase (keyed by id)
+// Push all local foods to Firebase (full replace — cleans up stale duplicates)
 function syncFoodsToFirebase() {
   const path = fbFoodsPath();
   if (!path) return;
   const foodMap = {};
   state.foods.forEach(f => { foodMap[f.id] = f; });
   fetch(path + '.json', {
-    method: 'PATCH',
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(foodMap),
   }).catch(() => {});
@@ -1041,7 +1041,7 @@ function startFoodSync() {
   // Initial pull: merge remote foods into local
   fetch(path + '.json').then(r => r.json()).then(remote => {
     if (!remote) { syncFoodsToFirebase(); return; }
-    let changed = false;
+    let newCount = 0;
     Object.values(remote).forEach(rf => {
       if (!rf || !rf.id || !rf.name) return;
       const local = state.foods.find(f => f.id === rf.id);
@@ -1052,18 +1052,19 @@ function startFoodSync() {
       }
       if (!local) {
         state.foods.push(rf);
-        changed = true;
+        newCount++;
       } else if ((rf.useCount || 0) > (local.useCount || 0) || (rf.lastUsed || 0) > (local.lastUsed || 0)) {
         Object.assign(local, rf);
-        changed = true;
       }
     });
-    if (changed) {
-      localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
-      if (typeof renderToday === 'function') renderToday();
-      if (state.currentScreen === 'foods' && typeof renderFoods === 'function') renderFoods();
+    // Deduplicate after merge to catch any duplicates
+    deduplicateFoods();
+    if (newCount > 0) {
+      toast(newCount + ' food(s) synced from partner');
     }
-    // Push any local-only foods to Firebase
+    if (typeof renderToday === 'function') renderToday();
+    if (state.currentScreen === 'foods' && typeof renderFoods === 'function') renderFoods();
+    // Push merged & deduped foods to Firebase (PUT replaces entirely, cleaning up stale entries)
     syncFoodsToFirebase();
   }).catch(() => {});
 
@@ -1073,11 +1074,13 @@ function startFoodSync() {
     fbEventSource.addEventListener('put', e => {
       try {
         const msg = JSON.parse(e.data);
-        if (!msg.data) return;
         const msgPath = msg.path; // "/" for full replace, "/foodId" for single
         if (msgPath === '/') {
-          // Full dataset
+          if (!msg.data) return; // entire foods node deleted, ignore
+          // Full dataset replace — merge new foods, remove deleted ones
+          const remoteIds = new Set(Object.keys(msg.data));
           let changed = false;
+          // Add/update remote foods
           Object.values(msg.data).forEach(rf => {
             if (!rf || !rf.id || !rf.name) return;
             const local = state.foods.find(f => f.id === rf.id);
@@ -1086,12 +1089,25 @@ function startFoodSync() {
             else if ((rf.lastUsed || 0) > (local.lastUsed || 0)) { Object.assign(local, rf); changed = true; }
           });
           if (changed) {
+            deduplicateFoods();
             localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
             if (typeof renderToday === 'function') renderToday();
             if (state.currentScreen === 'foods' && typeof renderFoods === 'function') renderFoods();
           }
         } else {
-          // Single food update
+          // Single food update or delete
+          const foodId = msgPath.replace('/', '');
+          if (msg.data === null) {
+            // Food was deleted on partner device — remove locally too
+            const idx = state.foods.findIndex(f => f.id === foodId);
+            if (idx !== -1) {
+              state.foods.splice(idx, 1);
+              localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
+              if (typeof renderToday === 'function') renderToday();
+              if (state.currentScreen === 'foods' && typeof renderFoods === 'function') renderFoods();
+            }
+            return;
+          }
           const rf = msg.data;
           if (!rf || !rf.id) return;
           const local = state.foods.find(f => f.id === rf.id);
@@ -3324,7 +3340,6 @@ document.getElementById('manual-barcode-input').addEventListener('keydown', (e) 
 
 // ===== INIT =====
 loadAll();
-deduplicateFoods();
 applyTheme();
 renderToday();
 startFoodSync();
