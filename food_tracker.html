@@ -134,6 +134,16 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
 .meal-header h3 { font-size: 16px; font-weight: 600; }
 .meal-header .meal-cals { font-size: 13px; color: var(--text3); }
 .meal-actions { display: flex; gap: 8px; }
+.copy-partner-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.copy-partner-item:last-child { border-bottom: none; }
+.copy-partner-item input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
+.copy-partner-item .food-info { flex: 1; min-width: 0; }
+.copy-partner-item .food-macros { font-size: 12px; color: var(--text2); display: flex; gap: 6px; flex-shrink: 0; }
+.copy-partner-select-all { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; color: var(--text2); border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.copy-partner-select-all input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
 .meal-btn {
   background: none; border: none; cursor: pointer; padding: 4px;
   color: var(--accent); font-size: 20px; line-height: 1;
@@ -841,6 +851,26 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
   </div>
 </div>
 
+<!-- Copy from Partner Modal -->
+<div class="modal-overlay" id="modal-copy-partner">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 id="copy-partner-title">Copy from Partner</h3>
+      <button class="modal-close" data-action="close-modal" data-modal="modal-copy-partner">&times;</button>
+    </div>
+    <div id="copy-partner-subtitle" style="font-size:13px;color:var(--text2);margin-bottom:12px"></div>
+    <div id="copy-partner-loading" style="display:none;text-align:center;padding:20px;color:var(--text3)">Loading partner data...</div>
+    <div id="copy-partner-empty" style="display:none;text-align:center;padding:20px;color:var(--text3)">Partner has no foods in this meal</div>
+    <div id="copy-partner-items"></div>
+    <div id="copy-partner-actions" style="display:none;margin-top:12px">
+      <label class="copy-partner-select-all">
+        <input type="checkbox" id="copy-partner-select-all" checked> Select All
+      </label>
+      <button class="btn btn-primary btn-block" data-action="confirm-copy-partner" style="margin-top:10px">Copy Selected Items</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
@@ -1195,6 +1225,7 @@ let state = {
   historyWeekOffset: 0,
   recMeal: 0,
   recItems: [],
+  copyPartnerMeal: 0,
   partnerLogs: {},
   dashboardDate: todayStr(),
 };
@@ -1390,6 +1421,19 @@ function peekLog(date, profile) {
   return (state.logs[date] && state.logs[date][profile]) || null;
 }
 
+function getPartnerMealData(date, mealIndex) {
+  const partner = state.activeProfile === 'male' ? 'female' : 'male';
+  // Check local logs first
+  let log = peekLog(date, partner);
+  let localHasFood = log && log.meals && log.meals[mealIndex] && log.meals[mealIndex].length > 0;
+  // Fall back to partnerLogs from Firebase
+  if (!localHasFood && state.partnerLogs[date] && state.partnerLogs[date][partner]) {
+    log = state.partnerLogs[date][partner];
+  }
+  if (!log || !log.meals || !log.meals[mealIndex] || log.meals[mealIndex].length === 0) return null;
+  return { items: log.meals[mealIndex], profile: partner };
+}
+
 function getTotals(date, profile) {
   const log = peekLog(date, profile);
   if (!log) return { calories: 0, protein: 0, carbs: 0, fat: 0 };
@@ -1533,6 +1577,7 @@ function renderToday() {
             <span class="meal-cals">${Math.round(mealCals)} cal</span>
           </div>
           <div class="meal-actions">
+            <button class="meal-btn" data-action="copy-partner-meal" data-meal="${i}" title="Copy from partner">&#x21C4;</button>
             <button class="meal-btn" data-action="recommend-meal" data-meal="${i}" title="Suggest foods">&#9889;</button>
             <button class="meal-btn" data-action="add-food-to-meal" data-meal="${i}" title="Add food">&#43;</button>
           </div>
@@ -2620,6 +2665,78 @@ const MEAL_TEMPLATES = [
   ]},
 ];
 
+async function openCopyPartnerModal(mealIndex) {
+  state.copyPartnerMeal = mealIndex;
+  const partner = state.activeProfile === 'male' ? 'female' : 'male';
+  const partnerName = state.profiles[partner]?.name || (partner === 'male' ? 'Person 1' : 'Person 2');
+  document.getElementById('copy-partner-title').textContent = 'Copy from ' + partnerName;
+  document.getElementById('copy-partner-subtitle').textContent = partnerName + "'s " + MEAL_NAMES[mealIndex] + ' for ' + formatDate(state.currentDate);
+  document.getElementById('copy-partner-loading').style.display = 'none';
+  document.getElementById('copy-partner-empty').style.display = 'none';
+  document.getElementById('copy-partner-items').innerHTML = '';
+  document.getElementById('copy-partner-actions').style.display = 'none';
+  document.getElementById('copy-partner-select-all').checked = true;
+  openModal('modal-copy-partner');
+
+  // Try local data first
+  let data = getPartnerMealData(state.currentDate, mealIndex);
+  if (!data) {
+    // Fetch from Firebase
+    document.getElementById('copy-partner-loading').style.display = 'block';
+    await fetchPartnerLogsForDate(state.currentDate);
+    document.getElementById('copy-partner-loading').style.display = 'none';
+    data = getPartnerMealData(state.currentDate, mealIndex);
+  }
+
+  if (!data || data.items.length === 0) {
+    document.getElementById('copy-partner-empty').style.display = 'block';
+    return;
+  }
+
+  let html = '';
+  data.items.forEach((item, idx) => {
+    html += `<label class="copy-partner-item">
+      <input type="checkbox" class="copy-partner-check" data-index="${idx}" checked>
+      <div class="food-info">
+        <div class="food-name">${esc(item.name)}</div>
+        <div class="food-serving">${esc(item.servingDisplay || item.serving || '')}</div>
+      </div>
+      <div class="food-macros">
+        <span>${Math.round(item.calories)}cal</span>
+        <span>${round1(item.protein)}P</span>
+        <span>${round1(item.carbs)}C</span>
+        <span>${round1(item.fat)}F</span>
+      </div>
+    </label>`;
+  });
+  document.getElementById('copy-partner-items').innerHTML = html;
+  document.getElementById('copy-partner-actions').style.display = 'block';
+}
+
+function confirmCopyPartner() {
+  const data = getPartnerMealData(state.currentDate, state.copyPartnerMeal);
+  if (!data) return;
+  const checks = document.querySelectorAll('.copy-partner-check:checked');
+  if (checks.length === 0) {
+    toast('No items selected');
+    return;
+  }
+  const log = getLog(state.currentDate, state.activeProfile);
+  checks.forEach(cb => {
+    const idx = parseInt(cb.dataset.index);
+    const item = data.items[idx];
+    if (item) {
+      log.meals[state.copyPartnerMeal].push(JSON.parse(JSON.stringify(item)));
+    }
+  });
+  saveLogs();
+  closeModal('modal-copy-partner');
+  renderToday();
+  const partner = state.activeProfile === 'male' ? 'female' : 'male';
+  const partnerName = state.profiles[partner]?.name || 'Partner';
+  toast('Copied ' + checks.length + ' item(s) from ' + partnerName);
+}
+
 function openRecommendation(mealIndex) {
   state.recMeal = mealIndex;
   document.getElementById('rec-meal-name').textContent = MEAL_NAMES[mealIndex];
@@ -3059,6 +3176,9 @@ document.addEventListener('click', (e) => {
     case 'edit-meal-item':
       openEditMealItem(parseInt(btn.dataset.meal), parseInt(btn.dataset.index));
       break;
+    case 'copy-partner-meal':
+      openCopyPartnerModal(parseInt(btn.dataset.meal));
+      break;
     case 'recommend-meal':
       openRecommendation(parseInt(btn.dataset.meal));
       break;
@@ -3220,6 +3340,11 @@ document.addEventListener('click', (e) => {
       document.getElementById('manual-barcode-input').value = '';
       break;
 
+    // Copy from partner
+    case 'confirm-copy-partner':
+      confirmCopyPartner();
+      break;
+
     // Recommendations
     case 'use-recommendation':
       useRecommendation();
@@ -3368,6 +3493,11 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 document.getElementById('import-file').addEventListener('change', (e) => {
   if (e.target.files[0]) handleImport(e.target.files[0]);
   e.target.value = '';
+});
+
+// Copy from partner: Select All toggle
+document.getElementById('copy-partner-select-all').addEventListener('change', (e) => {
+  document.querySelectorAll('.copy-partner-check').forEach(cb => { cb.checked = e.target.checked; });
 });
 
 // USDA search on Enter
