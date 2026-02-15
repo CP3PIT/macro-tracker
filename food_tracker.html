@@ -1139,7 +1139,41 @@ function startFoodSync() {
         if (state.currentScreen === 'foods' && typeof renderFoods === 'function') renderFoods();
       } catch(err) {}
     });
+    // Reconnect SSE if it permanently closes
+    fbEventSource.onerror = () => {
+      if (fbEventSource && fbEventSource.readyState === EventSource.CLOSED) {
+        fbEventSource = null;
+        setTimeout(() => startFoodSync(), 5000);
+      }
+    };
   } catch(e) {}
+}
+
+// Periodic food sync fallback — catches missed SSE events on mobile
+let _foodSyncTimer = null;
+function startPeriodicFoodSync() {
+  if (_foodSyncTimer) clearInterval(_foodSyncTimer);
+  _foodSyncTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    const path = fbFoodsPath();
+    if (!path) return;
+    fetch(path + '.json').then(r => r.json()).then(remote => {
+      if (!remote) return;
+      let changed = false;
+      Object.values(remote).forEach(rf => {
+        if (!rf || !rf.id || !rf.name) return;
+        const local = state.foods.find(f => f.id === rf.id);
+        if (!local && state.foods.find(f => f.name.trim().toLowerCase() === rf.name.trim().toLowerCase())) return;
+        if (!local) { state.foods.push(rf); changed = true; }
+        else if ((rf.lastUsed || 0) > (local.lastUsed || 0)) { Object.assign(local, rf); changed = true; }
+      });
+      if (changed) {
+        localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods));
+        if (typeof renderToday === 'function') renderToday();
+        if (state.currentScreen === 'foods' && typeof renderFoods === 'function') renderFoods();
+      }
+    }).catch(() => {});
+  }, 60000);
 }
 
 // ===== APPLICATION STATE =====
@@ -1202,7 +1236,7 @@ function toast(msg) {
 
 // ===== STORAGE =====
 function saveProfiles() { localStorage.setItem(STORAGE_KEYS.profiles, JSON.stringify(state.profiles)); }
-function saveFoods() { localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods)); syncFoodsToFirebase(); }
+function saveFoods() { localStorage.setItem(STORAGE_KEYS.foods, JSON.stringify(state.foods)); }
 
 // Deduplicate foods by name — keeps the one with highest useCount/most recent lastUsed
 function deduplicateFoods() {
@@ -1309,6 +1343,7 @@ function seedFoods() {
     { id: uid(), name: 'Chicken Breast (Cafe Farms)', serving: '4 oz', servingGrams: 113, protein: 27, carbs: 0, fat: 3, calories: 120, source: 'custom', barcode: '', category: 'protein', lastUsed: 0, useCount: 0 },
   ];
   saveFoods();
+  syncFoodsToFirebase();
 }
 
 // ===== NAVIGATION =====
@@ -1940,6 +1975,7 @@ function showScanResult(food, code, isLocal, warning, dataSource) {
       if (!food.source) food.source = 'scanned';
       state.foods.push(food);
       saveFoods();
+      syncFoodToFirebase(food);
     } else {
       lastScanFood = existing;
     }
@@ -2120,6 +2156,7 @@ function confirmAddFood() {
   food.useCount = (food.useCount || 0) + 1;
   food.lastUsed = Date.now();
   saveFoods();
+  syncFoodToFirebase(food);
 
   closeModal('modal-add-food');
   renderToday();
@@ -2176,6 +2213,7 @@ function quickCreateFood() {
 
   state.foods.push(food);
   saveFoods();
+  syncFoodToFirebase(food);
 
   // Close quick create, select the new food
   document.getElementById('add-food-quick-create').style.display = 'none';
@@ -2332,16 +2370,19 @@ function saveFoodForm() {
     category: document.getElementById('ff-category').value,
   };
 
+  let changedFood;
   if (state.editingFoodId) {
-    const food = state.foods.find(f => f.id === state.editingFoodId);
-    if (food) Object.assign(food, data);
+    changedFood = state.foods.find(f => f.id === state.editingFoodId);
+    if (changedFood) Object.assign(changedFood, data);
     toast('Food updated');
   } else {
-    state.foods.push({ id: uid(), ...data, source: 'custom', barcode: '', lastUsed: 0, useCount: 0 });
+    changedFood = { id: uid(), ...data, source: 'custom', barcode: '', lastUsed: 0, useCount: 0 };
+    state.foods.push(changedFood);
     toast('Food added');
   }
 
   saveFoods();
+  if (changedFood) syncFoodToFirebase(changedFood);
   closeModal('modal-food-form');
   renderFoods();
 }
@@ -2430,6 +2471,7 @@ function importUsdaFood(el) {
   };
   state.foods.push(food);
   saveFoods();
+  syncFoodToFirebase(food);
   toast(`Added: ${food.name}`);
 }
 
@@ -2772,6 +2814,7 @@ function useRecommendation() {
   });
   saveLogs();
   saveFoods();
+  state.recItems.forEach(p => syncFoodToFirebase(p.food));
   closeModal('modal-recommend');
   renderToday();
   toast('Meal suggestion applied');
@@ -2879,7 +2922,7 @@ function handleImport(file) {
     try {
       const data = JSON.parse(e.target.result);
       if (data.profiles) { state.profiles = data.profiles; saveProfiles(); }
-      if (data.foods) { state.foods = data.foods; saveFoods(); }
+      if (data.foods) { state.foods = data.foods; saveFoods(); syncFoodsToFirebase(); }
       if (data.logs) { state.logs = data.logs; saveLogs(); }
       if (data.settings) { state.settings = { ...state.settings, ...data.settings }; saveSettings(); applyTheme(); }
       toast('Data imported successfully');
@@ -2911,6 +2954,7 @@ function scanAddToFoods(foodData) {
   if (!state.foods.find(f => f.barcode === foodData.barcode)) {
     state.foods.push(foodData);
     saveFoods();
+    syncFoodToFirebase(foodData);
     toast(`Added ${foodData.name} to your food database`);
   } else {
     toast('Already in your database');
@@ -2949,6 +2993,7 @@ function scanAddToMeal(mealIndex) {
   food.useCount = (food.useCount || 0) + 1;
   food.lastUsed = Date.now();
   saveFoods();
+  syncFoodToFirebase(food);
 
   toast(`Added ${food.name} to ${MEAL_NAMES[mealIndex]}`);
 }
@@ -3344,6 +3389,7 @@ applyTheme();
 renderToday();
 startFoodSync();
 startLogSync();
+startPeriodicFoodSync();
 
 // Re-sync when app returns from background (SSE connections die on mobile sleep)
 document.addEventListener('visibilitychange', () => {
@@ -3355,6 +3401,12 @@ document.addEventListener('visibilitychange', () => {
     else if (state.currentScreen === 'foods') renderFoods();
     else if (state.currentScreen === 'dashboard') renderDashboard();
   }
+});
+
+// Re-sync when device comes back online
+window.addEventListener('online', () => {
+  startFoodSync();
+  startLogSync();
 });
 
 // ===== PWA Service Worker =====
