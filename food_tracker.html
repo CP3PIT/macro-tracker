@@ -973,6 +973,17 @@ function syncLocalLogsForDate(date) {
   });
 }
 
+// Migrate old dayType names on a log object (handles Sun/Mon swap)
+const DAY_TYPE_RENAMES = {
+  'mon-run (med carb)': 'sun-run (med carb)',
+  'sun-rest (low carb)': 'mon-rest (low carb)',
+};
+function migrateLogDayType(log) {
+  if (log && log.dayType && DAY_TYPE_RENAMES[log.dayType]) {
+    log.dayType = DAY_TYPE_RENAMES[log.dayType];
+  }
+}
+
 // Fetch partner logs for a specific date (one-time REST call)
 function fetchPartnerLogsForDate(date) {
   const path = fbLogsPath();
@@ -981,6 +992,7 @@ function fetchPartnerLogsForDate(date) {
     if (!data) return;
     ['male', 'female'].forEach(p => {
       if (data[p]) {
+        migrateLogDayType(data[p]);
         if (!state.partnerLogs[date]) state.partnerLogs[date] = {};
         state.partnerLogs[date][p] = data[p];
       }
@@ -1017,6 +1029,7 @@ function startLogSync() {
               const dayData = msg.data[date];
               if (dayData && typeof dayData === 'object') {
                 Object.keys(dayData).forEach(prof => {
+                  migrateLogDayType(dayData[prof]);
                   state.partnerLogs[date][prof] = dayData[prof];
                 });
               }
@@ -1030,9 +1043,11 @@ function startLogSync() {
             if (!state.partnerLogs[date]) state.partnerLogs[date] = {};
             if (parts.length >= 2) {
               const prof = parts[1];
+              migrateLogDayType(msg.data);
               state.partnerLogs[date][prof] = msg.data;
             } else if (msg.data && typeof msg.data === 'object') {
               Object.keys(msg.data).forEach(prof => {
+                migrateLogDayType(msg.data[prof]);
                 state.partnerLogs[date][prof] = msg.data[prof];
               });
             }
@@ -1050,6 +1065,7 @@ function startLogSync() {
           const dayData = msg.data[date];
           if (dayData && typeof dayData === 'object') {
             Object.keys(dayData).forEach(prof => {
+              migrateLogDayType(dayData[prof]);
               state.partnerLogs[date][prof] = dayData[prof];
             });
           }
@@ -1337,6 +1353,22 @@ function loadAll() {
         });
       });
       saveLogs();
+      // Re-push migrated logs to Firebase so old dayType names get overwritten
+      Object.keys(state.logs).forEach(dateKey => {
+        ['male','female'].forEach(pid => {
+          const log = state.logs[dateKey] && state.logs[dateKey][pid];
+          if (log && log.meals && log.meals.some(m => m.length > 0)) {
+            const path = fbLogsPath();
+            if (path) {
+              fetch(path + '/' + dateKey + '/' + pid + '.json', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(log),
+              }).catch(() => {});
+            }
+          }
+        });
+      });
     }
     state.settings.sunMonSwapped = true;
     saveSettings();
