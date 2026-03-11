@@ -1308,6 +1308,39 @@ function loadAll() {
 
   if (!state.profiles) seedData();
   if (!state.foods || state.foods.length === 0) seedFoods();
+
+  // One-time migration: swap Sun/Mon day types (run→rest on Mon, rest→run on Sun)
+  if (!state.settings.sunMonSwapped) {
+    const swapMap = {
+      'mon-run (med carb)': 'sun-run (med carb)',
+      'sun-rest (low carb)': 'mon-rest (low carb)',
+    };
+    // Migrate profile dayTypes
+    ['male','female'].forEach(pid => {
+      const prof = state.profiles[pid];
+      if (!prof || !prof.dayTypes) return;
+      const newDT = {};
+      Object.keys(prof.dayTypes).forEach(k => {
+        newDT[swapMap[k] || k] = prof.dayTypes[k];
+      });
+      prof.dayTypes = newDT;
+    });
+    saveProfiles();
+    // Migrate existing log dayType references
+    if (state.logs) {
+      Object.keys(state.logs).forEach(dateKey => {
+        ['male','female'].forEach(pid => {
+          const log = state.logs[dateKey] && state.logs[dateKey][pid];
+          if (log && log.dayType && swapMap[log.dayType]) {
+            log.dayType = swapMap[log.dayType];
+          }
+        });
+      });
+      saveLogs();
+    }
+    state.settings.sunMonSwapped = true;
+    saveSettings();
+  }
 }
 
 function seedData() {
@@ -1315,25 +1348,25 @@ function seedData() {
     male: {
       name: 'Chris',
       dayTypes: {
-        'mon-run (med carb)': { calories: 1950, protein: 200, carbs: 190, fat: 45 },
+        'mon-rest (low carb)': { calories: 1725, protein: 200, carbs: 100, fat: 58 },
         'tue-back/bis (med carb)': { calories: 1950, protein: 200, carbs: 180, fat: 45 },
         'wed-chest/sh/tri (med carb)': { calories: 1950, protein: 200, carbs: 180, fat: 45 },
         'thu-hiit (low carb)': { calories: 1725, protein: 200, carbs: 110, fat: 58 },
         'fri-legs (high carb)': { calories: 2350, protein: 200, carbs: 325, fat: 38 },
         'sat-full body (med carb)': { calories: 1950, protein: 200, carbs: 190, fat: 45 },
-        'sun-rest (low carb)': { calories: 1725, protein: 200, carbs: 100, fat: 58 },
+        'sun-run (med carb)': { calories: 1950, protein: 200, carbs: 190, fat: 45 },
       }
     },
     female: {
       name: 'Erica',
       dayTypes: {
-        'mon-run (med carb)': { calories: 1675, protein: 145, carbs: 170, fat: 40 },
+        'mon-rest (low carb)': { calories: 1475, protein: 145, carbs: 83, fat: 48 },
         'tue-back/bis (med carb)': { calories: 1675, protein: 145, carbs: 160, fat: 40 },
         'wed-chest/sh/tri (med carb)': { calories: 1675, protein: 145, carbs: 160, fat: 40 },
         'thu-hiit (low-mod carb)': { calories: 1475, protein: 145, carbs: 110, fat: 48 },
         'fri-legs (high carb)': { calories: 2000, protein: 145, carbs: 263, fat: 38 },
         'sat-full body (med carb)': { calories: 1675, protein: 145, carbs: 170, fat: 40 },
-        'sun-rest (low carb)': { calories: 1475, protein: 145, carbs: 83, fat: 48 },
+        'sun-run (med carb)': { calories: 1675, protein: 145, carbs: 170, fat: 40 },
       }
     }
   };
